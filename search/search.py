@@ -15,6 +15,7 @@ def download(src, dst):
 
 def prepare(kind, size):
     url = "https://sisap-23-challenge.s3.amazonaws.com/SISAP23-Challenge"
+    #url = "https://sisap-challenges.github.io/2024/datasets/"
     #url = "http://ingeotec.mx/~sadit/metric-datasets/LAION/SISAP23-Challenge"
     task = {
         "query": f"{url}/public-queries-10k-{kind}.h5",
@@ -23,6 +24,9 @@ def prepare(kind, size):
 
     for version, url in task.items():
         download(url, os.path.join("data", kind, size, f"{version}.h5"))
+
+    #data = h5py.File('clip/laion2B-en-clip768v2-n_300K.h5', 'r')
+    #queries = h5py.File('clip/gold-standard-dbsize_10M--public-queries-2024-laion2B-en-clip768v2-n_10k.h5', 'r')
 
 def store_results(dst, algo, kind, D, I, buildtime, querytime, params, size):
     os.makedirs(Path(dst).parent, exist_ok=True)
@@ -37,7 +41,7 @@ def store_results(dst, algo, kind, D, I, buildtime, querytime, params, size):
     f.create_dataset('dists', D.shape, dtype=D.dtype)[:] = D
     f.close()
 
-def run(kind, key, size="100K", k=30):
+def run(kind, key, size="300K", k=30):
     print("Running", kind)
     
     prepare(kind, size)
@@ -58,11 +62,18 @@ def run(kind, key, size="100K", k=30):
         # create view to interpret original uint64 as 8 chunks of uint8
         data = np.array(data).view(dtype="uint8")
         queries = np.array(queries).view(dtype="uint8")
+    elif kind.startswith("clip768"):
+        index_identifier = f"IVF{nlist},Flat"
+        res = faiss.StandardGpuResources()
+        flat_config = faiss.GpuIndexFlatConfig()
+        flat_config.device = 0
+        index = faiss.GpuIndexFlatL2(res, d, flat_config)
+        index = faiss.index_factory(d, index_identifier)
+        co = faiss.GpuClonerOptions()
+        co.useFloat16 = True
+        index = faiss.index_cpu_to_gpu(res, 0, index, co)
+
     else:
-        # if kind == "clip768":
-        # convert vectors from float16 to float32 
-        # normalize vectors
-        # dot product / angle as distance (1-cosine) 
         raise Exception(f"unsupported input type {kind}")
 
     print(f"Training index on {data.shape}")
@@ -87,12 +98,22 @@ def run(kind, key, size="100K", k=30):
 
         store_results(os.path.join("result/", kind, size, f"{identifier}.h5"), "faissIVF", kind, D, I, elapsed_build, elapsed_search, identifier, size)
 
+        #idk if I need this
+        #print("benchmark")
+        #for lnprobe in range(10):
+        #    nprobe = 1 << lnprobe
+        #    index.nprobe
+        #    index.nprobe = nprobe
+        #    t, r = evaluate(index, xq, gt, 100)
+
+        #print("nprobe=%4d %.3f ms recalls= %.4f %.4f %.4f" % (nprobe, t, r[1], r[10], r[100]))
+
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--size",
-        default="100K"
+        default="300K"
     )
     parser.add_argument(
         "--k",
@@ -103,6 +124,7 @@ if __name__ == "__main__":
 
     assert args.size in ["100K", "300K", "10M", "30M", "100M"]
 
-    run("pca32v2", "pca32", args.size, args.k)
-    run("pca96v2", "pca96", args.size, args.k)
-    run("hammingv2", "hamming", args.size, args.k)
+    #run("pca32v2", "pca32", args.size, args.k)
+    #run("pca96v2", "pca96", args.size, args.k)
+    #run("hammingv2", "hamming", args.size, args.k)
+    run("clip768v2", "emb", args.size, args.k)
