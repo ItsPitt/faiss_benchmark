@@ -41,7 +41,7 @@ def store_results(dst, algo, kind, D, I, buildtime, querytime, params, size):
     f.create_dataset('dists', D.shape, dtype=D.dtype)[:] = D
     f.close()
 
-def run(kind, key, size="300K", k=30):
+def run(kind, key, size="300K", k=30, nlist=128, pq="Flat"):
     print("Running", kind)
     
     prepare(kind, size)
@@ -50,20 +50,18 @@ def run(kind, key, size="300K", k=30):
     queries = np.array(h5py.File(os.path.join("data", kind, size, "query.h5"), "r")[key])
     n, d = data.shape
 
-    nlist = 128 # number of clusters/centroids to build the IVF from
-
     if kind.startswith("pca"):
-        index_identifier = f"IVF{nlist},Flat"
+        index_identifier = f"IVF{nlist},{pq}"
         index = faiss.index_factory(d, index_identifier)
     elif kind.startswith("hamming"):
-        index_identifier = f"BIVF{nlist},Flat" # use binary IVF index
+        index_identifier = f"BIVF{nlist},{pq}" # use binary IVF index
         d = 64 * d # one chunk contains 64 bits
         index = faiss.index_binary_factory(d, index_identifier)
         # create view to interpret original uint64 as 8 chunks of uint8
         data = np.array(data).view(dtype="uint8")
         queries = np.array(queries).view(dtype="uint8")
     elif kind.startswith("clip768"):
-        index_identifier = f"IVF{nlist},Flat"
+        index_identifier = f"IVF{nlist},{pq}"
         res = faiss.StandardGpuResources()
         flat_config = faiss.GpuIndexFlatConfig()
         flat_config.device = 0
@@ -85,7 +83,7 @@ def run(kind, key, size="300K", k=30):
     assert index.is_trained
 
     for nprobe in [1, 2, 5, 10, 20, 50, 100]:
-        print(f"Starting search on {queries.shape} with nprobe={nprobe}")
+        print(f"Starting search on {queries.shape} with nprobe={nprobe}, IVF{nlist}, and {pq}")
         start = time.time()
         index.nprobe = nprobe
         D, I = index.search(queries, k)
@@ -120,6 +118,16 @@ if __name__ == "__main__":
         default=30,
     )
 
+    parser.add_argument(
+        "--ivf",
+        default=128,
+    )
+
+    parser.add_argument(
+        "--pq",
+        default="Flat",
+    )
+
     args = parser.parse_args()
 
     assert args.size in ["100K", "300K", "10M", "30M", "100M"]
@@ -127,4 +135,4 @@ if __name__ == "__main__":
     #run("pca32v2", "pca32", args.size, args.k)
     #run("pca96v2", "pca96", args.size, args.k)
     #run("hammingv2", "hamming", args.size, args.k)
-    run("clip768v2", "emb", args.size, args.k)
+    run("clip768v2", "emb", args.size, args.k, args.ivf, args.pq)
