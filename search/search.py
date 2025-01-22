@@ -15,11 +15,12 @@ def download(src, dst):
 
 def prepare(kind, size):
     url = "https://sisap-23-challenge.s3.amazonaws.com/SISAP23-Challenge"
-    #url = "https://sisap-challenges.github.io/2024/datasets/"
     #url = "http://ingeotec.mx/~sadit/metric-datasets/LAION/SISAP23-Challenge"
     task = {
         "query": f"{url}/public-queries-10k-{kind}.h5",
         "dataset": f"{url}/laion2B-en-{kind}-n={size}.h5",
+        #"query": f"http://ingeotec.mx/~sadit/sisap2024-data/gold-standard-dbsize={size}--public-queries-2024-laion2B-en-{kind}-n=10k.h5",
+        #"dataset": f"{url}/laion2B-en-{kind}-n={size}.h5",
     }
 
     for version, url in task.items():
@@ -41,13 +42,14 @@ def store_results(dst, algo, kind, D, I, buildtime, querytime, params, size):
     f.create_dataset('dists', D.shape, dtype=D.dtype)[:] = D
     f.close()
 
-def run(kind, key, size="300K", k=30, nlist=128, pq="Flat"):
+def run(kind, key, size, k, nlist, pq):
     print("Running", kind)
     
     prepare(kind, size)
 
     data = np.array(h5py.File(os.path.join("data", kind, size, "dataset.h5"), "r")[key])
     queries = np.array(h5py.File(os.path.join("data", kind, size, "query.h5"), "r")[key])
+    #queries = np.array(h5py.File(os.path.join("data", kind, size, "query.h5"), "r")["dists"])
     n, d = data.shape
 
     if kind.startswith("pca"):
@@ -61,6 +63,7 @@ def run(kind, key, size="300K", k=30, nlist=128, pq="Flat"):
         data = np.array(data).view(dtype="uint8")
         queries = np.array(queries).view(dtype="uint8")
     elif kind.startswith("clip768"):
+        #queries = np.array(queries).view(dtype="float32") ??
         index_identifier = f"IVF{nlist},{pq}"
         res = faiss.StandardGpuResources()
         flat_config = faiss.GpuIndexFlatConfig()
@@ -83,7 +86,7 @@ def run(kind, key, size="300K", k=30, nlist=128, pq="Flat"):
     assert index.is_trained
 
     for nprobe in [1, 2, 5, 10, 20, 50, 100]:
-        print(f"Starting search on {queries.shape} with nprobe={nprobe}, IVF{nlist}, and {pq}")
+        print(f"Starting search on {queries.shape} with nprobe={nprobe}, IVF{nlist}, {pq}, Size {size}")
         start = time.time()
         index.nprobe = nprobe
         D, I = index.search(queries, k)
