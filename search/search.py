@@ -42,10 +42,14 @@ def store_results(dst, algo, kind, D, I, buildtime, querytime, params, size):
     f.create_dataset('dists', D.shape, dtype=D.dtype)[:] = D
     f.close()
 
-def run(kind, key, size, k, nlist, pq):
+def run(kind, key, size, k, nlist, pq, opq):
     print("Running", kind)
     
     prepare(kind, size)
+
+    #add comma if the arg isn't empty
+    if opq != "":
+        opq = f"{opq},"
 
     data = np.array(h5py.File(os.path.join("data", kind, size, "dataset.h5"), "r")[key])
     queries = np.array(h5py.File(os.path.join("data", kind, size, "query.h5"), "r")[key])
@@ -64,7 +68,7 @@ def run(kind, key, size, k, nlist, pq):
         queries = np.array(queries).view(dtype="uint8")
     elif kind.startswith("clip768"):
         #queries = np.array(queries).view(dtype="float32") ??
-        index_identifier = f"IVF{nlist},{pq}"
+        index_identifier = f"{opq}IVF{nlist},{pq}"
         res = faiss.StandardGpuResources()
         flat_config = faiss.GpuIndexFlatConfig()
         flat_config.device = 0
@@ -131,6 +135,11 @@ if __name__ == "__main__":
         default="Flat",
     )
 
+    parser.add_argument(
+        "--opq",
+        default="",
+    )
+
     args = parser.parse_args()
 
     assert args.size in ["100K", "300K", "10M", "30M", "100M"]
@@ -138,4 +147,4 @@ if __name__ == "__main__":
     #run("pca32v2", "pca32", args.size, args.k)
     #run("pca96v2", "pca96", args.size, args.k)
     #run("hammingv2", "hamming", args.size, args.k)
-    run("clip768v2", "emb", args.size, args.k, args.ivf, args.pq)
+    run("clip768v2", "emb", args.size, args.k, args.ivf, args.pq, args.opq)
